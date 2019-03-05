@@ -1,0 +1,268 @@
+/*
+* File:   SISTEMA-DE-PROTECAO.c
+* Author: Breno Emanuel
+* E-mail: brenoemanuelsilvestre@gmail.com
+*
+* Created on 21 de Agosto de 2018, 19:31
+* Tool: MPLABX IDE v4.20
+* Compiler: XC8
+* MCU: PIC16F676
+* 
+This program briefly contains a current management for an adjustable DC voltage 
+source from 1.45 to 26VDC. The function of the code is to limit current at  the
+source output, with protection against short circuit and overcurrent.
+The current limit is selected  using the BL05A to 500mA and BL1A to 1A buttons.
+The RESET button is used  to restart the  monitoring  system after  a  possible
+overcurrent or short circuit.
+* 
+*/
+
+//CONFIG
+#pragma config FOSC = HS                // CONFIGURING THE OSCILLATOR TYPE AS HIGH SPEED
+#define _XTAL_FREQ 20000000             // CONFIGURING OSCILLATION FREQUENCY TO 20 MHZ
+#pragma config WDTE = OFF               // WATCH DOG TIMER DISABLED
+#pragma config PWRTE = ON               // POWER-UP TIMER ENABLED
+#pragma config MCLRE = OFF              // MASTER CLEAR RESET PIN DISABLED
+#pragma config BOREN = ON               // BROWN-OUT DETECT ENABLED
+#pragma config CP = ON                  // CODE PROTECTION ENABLED
+#pragma config CPD = ON                 // DATE CODE PROTECTION ENABLED
+
+
+//INCLUDE
+#include <xc.h>                         // LIBRARY FOR COMPILER USER
+#include <pic16f676.h>                  // LIBRARY FOR MCU PIC16F676 USER
+
+//DEFINE
+#define LED_GREEN        RC0            // DEFINE (RC0) AS LED_GREEN
+#define LED_RED          RC1            // DEFINE (RC1) AS LED_RED
+#define LED_YELLOW_05A   RC2            // DEFINE (RC2) AS LED_YELLOW_1A
+#define LED_YELLOW_1A    RC3            // DEFINE (RC3) AS LED_YELLOW_3A
+#define RELE_ABERTO      RC4            // DEFINE (RC4) AS RELE_ABERTO
+#define BUZZER           RC5            // DEFINE (RC5) AS BUZZER
+#define BL05A            RA3            // DEFINE (RA1) AS BL05A
+#define BL1A             RA2            // DEFINE (RA2) AS BL1A
+
+//FUNCTION PROTOTYPE
+void CONFIG_CAD();                      // PROTOTYPE FUNCTION THAT CONFIGURES THE CAD
+int READ_CAD();                         // PROTOTYPE FUNCTION READING CAD
+int READ_RESET();                       // PROTOTYPE FUNCTION READING BUTTON RESET
+
+
+void main(void) 
+{
+PORTC = 0b00000000;                     // SET ALL (PORTC) TO START LOW LOGIC LEVEL
+PORTA = 0b00000000;                     // SET ALL (PORTA) TO START LOW LOGIC LEVEL
+TRISC = 0b00000000;                     // SET ALL (PORTC) AS OUTPUT
+TRISA2 = 1;                             // SET (TRISA2) AS INPUT
+TRISA3 = 1;                             // SET (TRISA3) AS INPUT
+
+//INITIALIZATION
+BUZZER = 1;                             // SET BUZZER AS HIGH LOGIC LEVEL
+__delay_ms(12);                         // WAIT ONE TIME (12mS)
+BUZZER = 0;                             // SET BUZZER AS LOW LOGIC LEVEL
+LED_YELLOW_05A = 1;                     // SET LED_YELLOW_05A AS HIGH LOGIC LEVEL
+__delay_ms(150);                        // WAIT ONE TIME (150mS)
+LED_YELLOW_05A = 0;                     // SET LED_YELLOW_05A AS LOW LOGIC LEVEL
+__delay_ms(150);                        // WAIT ONE TIME (150mS)
+LED_YELLOW_1A = 1;                      // SET LED_YELLOW_1A AS HIGH LOGIC LEVEL
+__delay_ms(150);                        // WAIT ONE TIME (150mS)
+LED_YELLOW_1A = 0;                      // SET LED_YELLOW_1A AS LOW LOGIC LEVEL
+__delay_ms(150);                        // WAIT ONE TIME (150mS)
+LED_YELLOW_05A = 1;                     // SET LED_YELLOW_05A AS HIGH LOGIC LEVEL
+__delay_ms(150);                        // WAIT ONE TIME (150mS)
+LED_YELLOW_05A = 0;                     // SET LED_YELLOW_05A AS LOW LOGIC LEVEL
+__delay_ms(150);                        // WAIT ONE TIME (150mS)
+LED_YELLOW_1A = 1;                      // SET LED_YELLOW_1A AS HIGH LOGIC LEVEL 
+__delay_ms(150);                        // WAIT ONE TIME (150mS)
+LED_YELLOW_1A = 0;                      // SET LED_YELLOW_1A AS LOW LOGIC LEVEL
+__delay_ms(150);                        // WAIT ONE TIME (150mS)
+
+
+//PROCESS FOR RELAY RELEASE
+RELE_ABERTO = 1;                        // SET RELE_ABERTO AS HIGH LOGIC LEVEL
+__delay_ms(250);                        // WAIT ONE TIME (250mS)
+RELE_ABERTO = 0;                        // SET RELE_ABERTO AS LOW LOGIC LEVEL
+__delay_ms(250);                        // WAIT ONE TIME (250mS)
+RELE_ABERTO = 1;                        // SET RELE_ABERTO AS HIGH LOGIC LEVEL
+__delay_ms(250);                        // WAIT ONE TIME (250mS)
+RELE_ABERTO = 0;                        // SET RELE_ABERTO AS LOW LOGIC LEVEL
+__delay_ms(50);                         // WAIT ONE TIME (50mS)
+
+BUZZER = 1;                             // SET BUZZER AS HIGH LOGIC LEVEL
+__delay_ms(110);                        // WAIT ONE TIME (110mS)
+BUZZER = 0;                             // SET BUZZER AS LOW LOGIC LEVEL
+__delay_ms(60);                         // WAIT ONE TIME (60mS)
+BUZZER = 1;                             // SET BUZZER AS HIGH LOGIC LEVEL
+__delay_ms(110);                        // WAIT ONE TIME (110mS)
+BUZZER = 0;                             // SET BUZZER AS LOW LOGIC LEVEL
+
+int REF_LIMIT = 1;                      // VARIABLE RECEIVING THE LIMIT THAT IS SELECTED (STARTED IN 500mA)
+int VALUE_CAD = 0;                      // VARIABLE LOCAL DECLARATION
+int BOTOOM_RESET = 0;                   // VARIABLE LOCAL DECLARATION
+CONFIG_CAD();                           // CALL FUNCTION TO CONFIGURE CAD
+LED_YELLOW_05A = 1;                     // LED INDICATING '' SELECTED 500mA LIMIT '' RECEIVES HIGH LEVEL
+LED_YELLOW_1A  = 0;                     // LED INDICATING '' SELECTED 1A LIMIT '' RECEIVES LOW LEVEL
+
+
+    //MAIN LOOP
+    while(1)
+    {
+    VALUE_CAD = READ_CAD();             // VARIABLE (VALUE_CAD) RECEIVES THE DIGITAL ANALOG CONVERTER READ VALUE
+    BOTOOM_RESET = READ_RESET();        // CHECK THAT THE RESET BUTTON WAS PRESSED
+    
+	//TEST TO START THE LED_GREEN IN HIGH LEVEL OR LOW LEVEL
+	if(RELE_ABERTO == 0)
+		{
+		LED_GREEN = 1;
+		}
+	else
+		{
+		LED_GREEN = 0;
+		}
+
+	//IDENTIFICATION OF THE LIMIT
+	if(BL05A == 1)                       // CHECK THAT THE BUTTON WAS PRESSED
+	{
+    BUZZER = 1;                          // SET BUZZER AS HIGH LOGIC LEVEL
+    __delay_ms(20);                      // WAIT ONE TIME (20mS)
+    BUZZER = 0;                          // SET BUZZER AS LOW LOGIC LEVEL
+	REF_LIMIT = 1;                       // VARIABLE (REF_LIMIT) RECEIVES (1)
+	LED_YELLOW_05A = 1;                  // LED INDICATING '' SELECTED 500mA LIMIT '' RECEIVES HIGH LOGIC LEVEL
+    LED_YELLOW_1A  = 0;                  // LED INDICATING '' SELECTED 1A LIMIT '' RECEIVES LOW LOGIC LEVEL
+    }
+    while(BL05A == 1);                   // LOCKING THE BUTTON
+
+	if(BL1A == 1)                        // CHECK THAT THE BUTTON WAS PRESSED
+	{
+    BUZZER = 1;                          // SET BUZZER AS HIGH LOGIC LEVEL
+    __delay_ms(20);                      // WAIT ONE TIME (20mS)
+    BUZZER = 0;                          // SET BUZZER AS LOW LOGIC LEVEL
+	REF_LIMIT = 2;                       // VARIABLE (REF_LIMIT) RECEIVES (2)
+	LED_YELLOW_05A = 0;                  // LED INDICATING '' SELECTED 500mA LIMIT '' RECEIVES LOW LOGIC LEVEL
+    LED_YELLOW_1A  = 1;                  // LED INDICATING '' SELECTED 1A LIMIT '' RECEIVES HIGH LOGIC LEVEL
+    }
+	while(BL1A == 1);                    // LOCKING THE BUTTON
+
+
+
+    //START OF STATE ANALYSIS
+    switch(REF_LIMIT)
+	{
+    
+    VALUE_CAD = READ_CAD();              // VARIABLE (VALUE_CAD) RECEIVES THE DIGITAL ANALOG CONVERTER READ VALUE
+         
+	case 1:                              // START CASE(1)
+	if(VALUE_CAD>541)                    // MAXIMUM PROTECTION WITH 500mA LIMIT
+		{
+		RELE_ABERTO = 1;                 // ENABLED OPENING OF RELAY POWER CONTACTS
+		BUZZER = 1;                      // SET BUZZER AS HIGH LOGIC LEVEL
+		LED_RED = 1;                     // LED '' ATTENTION '' IS ENABLED
+		LED_GREEN = 0;                   // LED ''READY TO OPERATE'' IS DISABLED
+		}
+    
+    BOTOOM_RESET = READ_RESET();         // CHECK THAT THE RESET BUTTON WAS PRESSED          
+	if(BOTOOM_RESET > 250)               // CHECK THAT THE RESET BUTTON WAS PRESSED
+		{
+		RELE_ABERTO = 0;                 // DISABLED OPENING OF RELAY POWER CONTACTS
+		BUZZER = 0;                      // SET BUZZER AS LOW LOGIC LEVEL
+		LED_RED = 0;                     // LED '' ATTENTION '' IS DISABLED
+		LED_GREEN = 1;                   // LED ''READY TO OPERATE'' IS ENABLED
+		}
+	break;                               // END OF CASE(1)
+
+
+	case 2:                              // START CASE(2)
+	if(VALUE_CAD>551)                    // MAXIMUM PROTECTION WITH 1A LIMIT
+		{
+		RELE_ABERTO = 1;                 // ENABLED OPENING OF RELAY POWER CONTACTS
+		BUZZER = 1;                      // SET BUZZER AS HIGH LOGIC LEVEL
+		LED_RED = 1;                     // LED '' ATTENTION '' IS ENABLED
+		LED_GREEN = 0;                   // LED ''READY TO OPERATE'' IS DISABLED
+		}
+    
+    BOTOOM_RESET = READ_RESET();         // CHECK THAT THE RESET BUTTON WAS PRESSED
+	if(BOTOOM_RESET > 250)               // CHECK THAT THE RESET BUTTON WAS PRESSED
+		{
+		RELE_ABERTO = 0;                 // DISABLED OPENING OF RELAY POWER CONTACTS
+		BUZZER = 0;                      // SET BUZZER AS LOW LOGIC LEVEL
+		LED_RED = 0;                     // LED '' ATTENTION '' IS DISABLED
+		LED_GREEN = 1;                   // LED ''READY TO OPERATE'' IS ENABLED
+		}
+	break;                               // END OF CASE(2)
+	}
+	}                                    // END OF MAIN LOOP
+}                                        // END OF MAIN
+
+//FUNCTIONS
+void CONFIG_CAD()
+/* This function makes settings for the use of CAD. It is necessary to change
+ * the settings to use the program in another MCU other than the PIC16F676.
+ */
+{
+    //CONFIG RECORDER ADCON0   
+    ADCON0bits.ADFM = 1;                 // JUSTIFY RESULT TO RIGHT.
+    ADCON0bits.VCFG = 0;                 // MCU VOLTAGE REFERENCE 5 VOLTS.
+    ADCON0bits.ADON = 1;                 // CAD ON.
+
+    //CONFIG RECORDER ADCON1
+    ADCON1bits.ADCS0 = 1;                // CLOCK CAD
+    ADCON1bits.ADCS1 = 0;                // CLOCK CAD 
+    ADCON1bits.ADCS2 = 0;                // CLOCK CAD
+
+    //CONFIG RECORDER ANSEL - (RA0 AND RA1) AS ANALOG INPUT
+    ANSELbits.ANS0 = 1;
+    ANSELbits.ANS1 = 1;   
+    ANSELbits.ANS2 = 0;   
+    ANSELbits.ANS3 = 0;   
+    ANSELbits.ANS4 = 0;   
+    ANSELbits.ANS5 = 0;   
+    ANSELbits.ANS6 = 0;   
+    ANSELbits.ANS7 = 0;   
+
+    //CONFIG RECORDER PIE1
+    PIE1bits.ADIE = 0;                   // INTERRUPTION CAD OFF
+
+    //CONFIG RECORDER PIR1
+    PIR1bits.ADIF = 0;                   // INTERRUPT FLAG CAD SOFTWARE CLEAN
+    
+    //CONFIG RECORDER TRIS
+    TRISA0 = 1;                          // SET (RA0) AS INPUT
+    TRISA1 = 1;                          // SET (RA1) AS INPUT
+}
+
+int READ_CAD()
+/* This function is responsible for reading the CAD and storing the
+ * final value in the local variable (RESULT_AD1).
+ */ 
+{
+    ADCON0bits.CHS0 = 0;                         // SELECTION CHANNEL (AN0)
+    ADCON0bits.CHS1 = 0;                         // SELECTION CHANNEL (AN0)
+    ADCON0bits.CHS2 = 0;                         // SELECTION CHANNEL (AN0)
+    __delay_ms(20);                              // WAIT ONE TIME (20mS)
+    int RESULT_AD1;                              // LOCAL VARIABLE DECLARATION
+    ADCON0bits.GO = 1;                           // START CONVERSION
+    while(ADCON0bits.GO);                        // WAIT CONVERSION
+    __delay_ms(20);                              // WAIT ONE TIME (20mS)
+    RESULT_AD1 = (((int)ADRESH)<<8)|(ADRESL);    // STORE CONVERSION VALUE
+    return RESULT_AD1;                           // RETURNS CONVERSION VALUE
+}
+
+int READ_RESET()
+/* This function is used to configure and analyze the digital analysis to be used
+ * as  a RESET  button. Pin RA1 (AN1) of the PIC16F676  MCU showed  an error in a
+ * situation that  did not identify the  high standard as digital input. Thus, to
+ * solve the  problem,  the pin was  used  as  an analog input to identify a high 
+ * logic level, making it a "false digital input".
+ */ 
+{
+    ADCON0bits.CHS0 = 1;                         // SELECTION CHANNEL (AN1).
+    ADCON0bits.CHS1 = 0;                         // SELECTION CHANNEL (AN1).
+    ADCON0bits.CHS2 = 0;                         // SELECTION CHANNEL (AN1).
+    __delay_ms(20);                              // WAIT ONE TIME (20mS).
+    int RESULT_AD2;                              // LOCAL VARIABLE DECLARATION.
+    ADCON0bits.GO = 1;                           // START CONVERSION.
+    while(ADCON0bits.GO);                        // WAIT CONVERSION.
+    __delay_ms(20);                              // WAIT ONE TIME (20mS).
+    RESULT_AD2 = (((int)ADRESH)<<8)|(ADRESL);    // STORE CONVERSION VALUE.
+    return RESULT_AD2;                           // RETURNS CONVERSION VALUE.
+}
